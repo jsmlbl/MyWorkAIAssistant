@@ -9,8 +9,11 @@ def create_task(db: Session, task: TaskCreate):
     db_task = Task(
         title=task.title,
         description=task.description,
+        type=task.type,
         priority=task.priority,
-        tags=task.tags
+        tags=task.tags,
+        status=task.status,
+        completed_at=task.completed_at
     )
     db.add(db_task)
     db.commit()
@@ -30,6 +33,7 @@ def update_task(db: Session, task_id: int, task: TaskUpdate):
     for var, value in vars(task).items():
         if value is not None:
             setattr(db_task, var, value)
+    db_task.updated_at = datetime.datetime.utcnow()
     if task.status == 'completed' and not db_task.completed_at:
         db_task.completed_at = datetime.datetime.utcnow()
     db.commit()

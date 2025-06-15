@@ -10,10 +10,12 @@ class Task(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     title = Column(String(255), nullable=False)
     description = Column(Text)
+    type = Column(String(50), default='knowledge')  # knowledge, work
     status = Column(String(50), default='pending')  # pending, in_progress, completed, paused
     priority = Column(String(50), default='normal')  # low, normal, high
     tags = Column(String(255))  # 逗号分隔
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     completed_at = Column(DateTime)
     attachments = relationship('Attachment', back_populates='task')
 

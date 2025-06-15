@@ -7,6 +7,8 @@ import crud
 import os
 from fastapi.responses import FileResponse
 import requests
+from streamlit_paste_button import paste_image_button
+from io import BytesIO
 
 # TiDB数据库连接配置
 SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:@192.168.5.124:4000/myassistant"
@@ -35,7 +37,7 @@ def ai_generate_tasks(prompt: str = Body(..., embed=True), db: Session = Depends
     """
     # 1. 调用DeepSeek API（此处用占位符，需替换为你的API Key和真实接口）
     DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-    DEEPSEEK_API_KEY = "YOUR_DEEPSEEK_API_KEY"  # 请替换为你的Key
+    DEEPSEEK_API_KEY = "sk-a9890582d5d54c78b952f0805da434df"  # 请替换为你的Key
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
@@ -129,4 +131,32 @@ def delete_attachment(attachment_id: int, db: Session = Depends(get_db)):
         os.remove(attachment.filepath)
     db.delete(attachment)
     db.commit()
-    return {"ok": True} 
+    return {"ok": True}
+
+@app.post("/ai_data_analysis/")
+def ai_data_analysis(prompt: str = Body(..., embed=True)):
+    """
+    输入一句话，调用DeepSeek API进行数据分析。
+    """
+    DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+    DEEPSEEK_API_KEY = "sk-a9890582d5d54c78b952f0805da434df"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": "deepseek-chat",
+        "messages": [
+            {"role": "system", "content": "你是一个数据分析助手，请根据用户输入进行数据分析，返回简明结论。"},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    try:
+        resp = requests.post(DEEPSEEK_API_URL, headers=headers, json=data, timeout=30)
+        resp.raise_for_status()
+        ai_content = resp.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI数据分析失败: {e}")
+    return {"result": ai_content}
+
+img = paste_image_button("请粘贴图片", key="paste_img")
