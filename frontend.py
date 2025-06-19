@@ -5,13 +5,70 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 from datetime import datetime
 import time
 from io import BytesIO
-from streamlit_paste_button import paste_image_button
+from streamlit_paste_button import paste_image_button as pbutton
+import base64
 
 API_URL = "http://localhost:8000"
 
 st.set_page_config(page_title="AI 助理任务管理平台", layout="wide")
 
-page = st.sidebar.radio("选择页面", ["任务查询", "AI任务会话", "添加任务"])
+# 初始化session state
+if "pasted_images" not in st.session_state:
+    st.session_state["pasted_images"] = []
+if "form_submitted" not in st.session_state:
+    st.session_state["form_submitted"] = False
+if "uploaded_files" not in st.session_state:
+    st.session_state["uploaded_files"] = []
+
+def handle_paste_image():
+    try:
+        paste_result = pbutton("📋 粘贴图片", key="paste_button")
+        if paste_result and paste_result.image_data is not None:
+            # 将图片数据转换为base64以便于存储和显示
+            buffered = BytesIO()
+            paste_result.image_data.save(buffered, format="PNG")
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            # 去重：只有新图片才加入
+            existed_base64 = [img["base64"] for img in st.session_state["pasted_images"]]
+            if img_str not in existed_base64:
+                st.session_state["pasted_images"].append({
+                    "image": paste_result.image_data,
+                    "base64": img_str
+                })
+                st.success("图片已成功粘贴！")
+            else:
+                st.info("该图片已粘贴，无需重复添加。")
+    except Exception as e:
+        st.error(f"粘贴图片时出错: {str(e)}")
+
+def display_pasted_images():
+    if st.session_state["pasted_images"]:
+        st.write("已粘贴图片：")
+        cols = st.columns(3)  # 每行显示3张图片
+        for idx, img_data in enumerate(st.session_state["pasted_images"]):
+            with cols[idx % 3]:
+                st.image(img_data["image"], caption=f"第{idx+1}张", use_column_width=True)
+    else:
+        pass
+        #st.rerun()
+
+def reset_form():
+    st.session_state["form_title"] = ""
+    st.session_state["form_type"] = "知识库"
+    st.session_state["form_status"] = "pending"
+    st.session_state["form_priority"] = "normal"
+    st.session_state["form_tags"] = ""
+    st.session_state["form_desc"] = ""
+    st.session_state["form_completed_at"] = None
+    st.session_state["form_file"] = None
+    st.session_state["pasted_images"] = []
+    st.session_state["uploaded_files"] = []
+
+# ========== 添加任务页面 ==========
+if 'page' not in st.session_state:
+    st.session_state['page'] = '任务查询'
+
+page = st.sidebar.radio("选择页面", ["任务查询", "AI任务会话", "添加任务"], key='page')
 
 # ========== 任务查询页面 ==========
 if page == "任务查询":
@@ -105,22 +162,11 @@ if page == "任务查询":
                     - 点击上传区会弹出文件选择窗口
                     """
                 )
-                img = paste_image_button("请粘贴图片", key=f"paste_img_{task_id}")
-                if img is not None:
-                    st.image(img)
-                    # 上传到后端
-                    buf = BytesIO()
-                    img.save(buf, format="PNG")
-                    buf.seek(0)
-                    files = {"file": ("pasted.png", buf, "image/png")}
-                    res = requests.post(f"{API_URL}/tasks/{task_id}/attachments/", files=files)
-                    if res.status_code == 200:
-                        st.success("图片已上传！")
-                    else:
-                        st.error("上传失败")
-                else:
-                    if st.button(f"重新上传_{task_id}"):
-                        st.rerun()
+                if "pasted_images" not in st.session_state:
+                    st.session_state["pasted_images"] = []
+
+                handle_paste_image()
+                display_pasted_images()
                 # 展示附件及删除按钮
                 task = next((t for t in tasks if t['id'] == task_id), None)
                 if task and task['attachments']:
@@ -218,24 +264,40 @@ elif page == "AI任务会话":
 elif page == "添加任务":
     st.title("添加任务")
     with st.form("add_task_form"):
-        title = st.text_input("任务名称", key="form_title")
-        type_ = st.selectbox("任务类型", ["知识库", "工作记录"], key="form_type")
-        status = st.selectbox("状态", ["pending", "in_progress", "completed", "paused"], key="form_status")
-        priority = st.selectbox("优先级", ["low", "normal", "high"], key="form_priority")
-        tags = st.text_input("标签（逗号分隔）", key="form_tags")
-        description = st.text_area("任务描述", key="form_desc")
+        title = st.text_input("任务名称", value=st.session_state.get("form_title", ""), key="form_title")
+        type_ = st.selectbox("任务类型", ["知识库", "工作记录"], index=0 if st.session_state.get("form_type", "知识库") == "知识库" else 1, key="form_type")
+        status = st.selectbox("状态", ["pending", "in_progress", "completed", "paused"], index=["pending", "in_progress", "completed", "paused"].index(st.session_state.get("form_status", "pending")), key="form_status")
+        priority = st.selectbox("优先级", ["low", "normal", "high"], index=["low", "normal", "high"].index(st.session_state.get("form_priority", "normal")), key="form_priority")
+        tags = st.text_input("标签（逗号分隔）", value=st.session_state.get("form_tags", ""), key="form_tags")
+        description = st.text_area("任务描述", value=st.session_state.get("form_desc", ""), key="form_desc")
         completed_at = None
         if type_ == "工作记录":
             completed_at = st.date_input("完成时间（可选）", key="form_completed_at")
+        st.markdown("""
+        **提示：**
+        - 支持拖拽图片或文件到上传区
+        - 支持常见图片、文档、表格等格式
+        """)
         uploaded_files = st.file_uploader(
-            "上传附件（支持多选）",
+            "上传附件（支持多选和图片）",
             type=None,
             accept_multiple_files=True,
             key="form_file"
         )
         submitted = st.form_submit_button("添加任务")
-    
-    # 先处理表单提交（创建任务和文件上传）
+
+    st.markdown("---")
+    st.subheader("粘贴图片")
+ 
+
+    st.write("图片长度：", len((st.session_state.get("pasted_images", []))))
+
+    if st.button("清空所有粘贴图片"):
+        st.session_state["pasted_images"] = []
+        st.rerun()
+    handle_paste_image()
+    display_pasted_images()
+
     if submitted:
         data = {
             "title": title,
@@ -251,8 +313,13 @@ elif page == "添加任务":
         if r_add.status_code == 200:
             task_id = r_add.json()["id"]
             all_success = True
+            # 上传file_uploader选中的文件
             if uploaded_files:
                 for uploaded_file in uploaded_files:
+                    if uploaded_file.type.startswith("image"):
+                        st.image(uploaded_file, caption=uploaded_file.name, width=150)
+                    else:
+                        st.write(f"已选择文件：{uploaded_file.name}")
                     files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
                     res = requests.post(f"{API_URL}/tasks/{task_id}/attachments/", files=files)
                     if res.status_code == 200:
@@ -260,34 +327,21 @@ elif page == "添加任务":
                     else:
                         st.toast(f"附件 {uploaded_file.name} 上传失败", icon="❌")
                         all_success = False
-            st.session_state["last_task_id"] = task_id
-            if all_success:
-                st.toast("任务添加成功！", icon="✅")
-            else:
-                st.toast("任务添加成功，但部分附件上传失败", icon="⚠️")
-            time.sleep(2)
+            # 上传所有粘贴图片
+            #st.write("图片长度：", len(session_state.get("pasted_images", [])))
+            for idx, img_data in enumerate(st.session_state.get("pasted_images", [])):
+                buf = BytesIO()
+                img_data["image"].save(buf, format="PNG")
+                buf.seek(0)
+                files = {"file": (f"pasted_{idx+1}.png", buf, "image/png")}
+                res = requests.post(f"{API_URL}/tasks/{task_id}/attachments/", files=files)
+                if res.status_code == 200:
+                    st.toast(f"粘贴图片{idx+1}上传成功！", icon="✅")
+                else:
+                    st.toast(f"粘贴图片{idx+1}上传失败", icon="❌")
+                    all_success = False
+            st.success("任务添加成功！")
+            st.session_state.clear()
             st.rerun()
         else:
             st.toast("添加失败", icon="❌")
-
-    # 粘贴图片上传（不在表单内，单独处理，需先添加任务）
-    st.markdown("---")
-    st.subheader("粘贴图片上传")
-    img_result = paste_image_button("请粘贴图片", key="paste_img")
-    if hasattr(img_result, "image") and img_result.image is not None:
-        st.image(img_result.image, caption="粘贴的图片预览")
-        if st.button("上传粘贴图片"):
-            # 需要有 task_id
-            task_id = st.session_state.get("last_task_id")
-            if not task_id:
-                st.warning("请先添加任务，再上传粘贴图片！")
-            else:
-                buf = BytesIO()
-                img_result.image.save(buf, format="PNG")
-                buf.seek(0)
-                files = {"file": ("pasted.png", buf, "image/png")}
-                res = requests.post(f"{API_URL}/tasks/{task_id}/attachments/", files=files)
-                if res.status_code == 200:
-                    st.success("图片已上传！")
-                else:
-                    st.error("上传失败") 

@@ -4,4 +4,5 @@ sqlalchemy
 pymysql
 streamlit
 requests
-streamlit-aggrid 
+streamlit-aggrid
+streamlit-paste-button
